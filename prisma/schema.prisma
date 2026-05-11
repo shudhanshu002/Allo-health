@@ -3,7 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Product {
@@ -25,13 +26,13 @@ model Warehouse {
 model Stock {
   productId   String
   warehouseId String
-  quantity    Int      // Total physical units in the warehouse
-  reserved    Int      @default(0) // Units currently locked in pending reservations
-  
-  product     Product   @relation(fields: [productId], references: [id])
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  quantity    Int
+  reserved    Int      @default(0)
 
-  @@id([productId, warehouseId]) // Composite primary key
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@id([productId, warehouseId])
 }
 
 model Reservation {
