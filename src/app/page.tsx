@@ -132,6 +132,7 @@ export default async function HomePage() {
                       <ReserveButton
                         productId={product.id}
                         warehouseId={stock.warehouseId}
+                        availableStock={availableStock}
                       />
                     ) : (
                       <span className="px-4 py-2 bg-gray-100 text-gray-400 text-sm font-semibold rounded-md cursor-not-allowed">
