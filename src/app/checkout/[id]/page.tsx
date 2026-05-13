@@ -4,117 +4,184 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Countdown from "@/components/Countdown";
 
+type Reservation = any; 
+
 export default function CheckoutPage() {
   const { id } = useParams();
   const router = useRouter();
-  
-  const [loading, setLoading] = useState(true);
-  const [reservation, setReservation] = useState<any>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const [isExpiredClient, setIsExpiredClient] = useState(false);
 
+  const [reservation, setReservation] = useState<Reservation | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [processing, setProcessing] = useState(false);
+  const [expired, setExpired] = useState(false);
+
+  
   useEffect(() => {
-    const fetchReservation = async () => {
+    if (!id) return;
+
+    const loadReservation = async () => {
       try {
         const res = await fetch(`/api/reservations/${id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setReservation(data);
-        } else {
-          setActionError("Failed to fetch reservation data.");
+
+        if (!res.ok) {
+          setError("Unable to load reservation details.");
+          return;
         }
+
+        const data = await res.json();
+        setReservation(data);
       } catch (err) {
-        setActionError("Network error while fetching reservation.");
+        setError("Network error while loading reservation.");
       } finally {
         setLoading(false);
       }
     };
-    if (id) fetchReservation();
+
+    loadReservation();
   }, [id]);
 
+  
   const handleAction = async (action: "confirm" | "release") => {
     setProcessing(true);
-    setActionError(null);
+    setError(null);
 
     try {
-      const res = await fetch(`/api/reservations/${id}/${action}`, { method: "POST" });
+      const res = await fetch(`/api/reservations/${id}/${action}`, {
+        method: "POST",
+      });
+
       if (!res.ok) {
         if (res.status === 410) {
-          setActionError("Too late! Your reservation expired and stock was released.");
-          setIsExpiredClient(true);
+          setExpired(true);
+          setError("Reservation expired. Stock has been released.");
         } else {
-          const data = await res.json();
-          setActionError(data.error || "Action failed");
+          const data = await res.json().catch(() => ({}));
+          setError(data?.error || "Request failed.");
         }
-        setProcessing(false);
+
         return;
       }
+
       router.replace("/");
-      router.refresh(); 
+      router.refresh();
     } catch (err) {
-      setActionError("Network error.");
+      setError("Network error. Please try again.");
+    } finally {
       setProcessing(false);
     }
   };
 
-  const handleTimeOut = () => {
-    // Prevent double-firing
-    if (processing) return; 
+  const handleExpire = () => {
+    if (processing) return;
 
-    setIsExpiredClient(true);
-    setProcessing(true); 
-    setActionError("Time expired! Releasing stock and redirecting...");
-    fetch(`/api/reservations/${id}/release`, { method: "POST" })
-      .catch(err => console.error("Background release failed", err));
-      
+    setExpired(true);
+    setError("Time expired. Releasing reservation...");
+
+    fetch(`/api/reservations/${id}/release`, {
+      method: "POST",
+    }).catch((err) => console.error("Auto-release failed:", err));
+
     setTimeout(() => {
       router.replace("/");
       router.refresh();
     }, 1500);
   };
 
-  if (loading) return <div className="p-10 text-center text-gray-500">Loading checkout...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="bg-white px-8 py-6 rounded-2xl shadow-lg border">
+          <div className="animate-spin h-10 w-10 border-4 border-blue-200 border-t-blue-600 rounded-full mx-auto" />
+          <p className="mt-4 text-center text-slate-500">
+            Loading checkout...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gray-900 p-6 text-white text-center">
-          <h1 className="text-2xl font-bold">Checkout</h1>
-          <p className="text-gray-400 text-sm mt-1">Order #{id?.toString().slice(0,8)}</p>
+    <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border overflow-hidden">
+
+        {/* Header */}
+        <div className="p-8 border-b text-center">
+          <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+            Secure Checkout
+          </span>
+
+          <h1 className="text-3xl font-bold mt-4">Complete Your Purchase</h1>
+
+          <p className="text-sm text-slate-500 mt-2">Reservation ID</p>
+
+          <div className="mt-2 font-mono text-sm bg-slate-100 px-3 py-1 rounded-lg inline-block">
+            #{String(id).slice(0, 8)}
+          </div>
         </div>
 
-        <div className="p-6">
-          <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg mb-6 flex justify-between items-center">
-            <span className="text-orange-800 font-medium text-sm">Time to complete order:</span>
-            {reservation?.expiresAt && !isExpiredClient ? (
-              <Countdown expiresAt={reservation.expiresAt} onExpire={handleTimeOut} />
-            ) : (
-              <span className="text-red-600 font-bold text-sm">EXPIRED</span>
-            )}
+        {/* Body */}
+        <div className="p-8">
+
+          {/* Timer */}
+          <div className="mb-6 p-5 rounded-2xl bg-orange-50 border border-orange-200 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-orange-700">
+                Time Remaining
+              </p>
+              <p className="text-xs text-orange-600 mt-1">
+                Complete checkout before expiry
+              </p>
+            </div>
+
+            <div>
+              {reservation?.expiresAt && !expired ? (
+                <Countdown
+                  expiresAt={reservation.expiresAt}
+                  onExpire={handleExpire}
+                />
+              ) : (
+                <span className="text-red-600 font-bold text-sm">
+                  EXPIRED
+                </span>
+              )}
+            </div>
           </div>
 
-          {actionError && (
-            <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm text-center font-medium animate-pulse">
-              {actionError}
+          {/* Error */}
+          {error && (
+            <div className="mb-6 p-4 rounded-xl bg-red-50 text-red-600 border border-red-200 text-sm">
+              {error}
             </div>
           )}
 
-          <div className="space-y-3 mt-8">
+          {/* Summary */}
+          <div className="mb-6 p-5 rounded-2xl bg-slate-50 border">
+            <h2 className="font-semibold mb-3">Summary</h2>
+
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Status</span>
+              <span className="text-green-600 font-semibold">Reserved</span>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="space-y-3">
             <button
               onClick={() => handleAction("confirm")}
-              disabled={processing || isExpiredClient}
-              className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+              disabled={processing || expired}
+              className="w-full py-3 rounded-xl text-white font-semibold bg-green-600 disabled:opacity-50"
             >
-              {processing && !isExpiredClient ? "Processing..." : "Confirm Purchase"}
+              {processing ? "Processing..." : "Confirm Purchase"}
             </button>
 
             <button
               onClick={() => handleAction("release")}
-              disabled={processing || isExpiredClient}
-              className="w-full bg-white border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-bold hover:bg-gray-50 transition disabled:opacity-50"
+              disabled={processing || expired}
+              className="w-full py-3 rounded-xl border font-semibold hover:bg-slate-50 disabled:opacity-50"
             >
-              Cancel & Release Stock
+              Cancel & Release
             </button>
           </div>
         </div>

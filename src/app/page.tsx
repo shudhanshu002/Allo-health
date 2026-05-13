@@ -5,42 +5,44 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
 
-  
-  // lazy cleanUp
+  const now = new Date();
 
-  // find all expired pending reservations
-  const expiredReservations = await prisma.reservation.findMany({
+  const expired = await prisma.reservation.findMany({
     where: {
-      status: 'PENDING',
-      expiresAt: { lt: new Date() }
-    }
+      status: "PENDING",
+      expiresAt: { lt: now },
+    },
   });
 
-  if (expiredReservations.length > 0) {
-    for (const res of expiredReservations) {
-      // Try to atomically claim this reservation for cleanup
-      const updateResult = await prisma.reservation.updateMany({
-        where: { id: res.id, status: 'PENDING' },
-        data: { status: 'RELEASED' }
+  if (expired.length > 0) {
+    for (const reservation of expired) {
+      const updated = await prisma.reservation.updateMany({
+        where: {
+          id: reservation.id,
+          status: "PENDING",
+        },
+        data: {
+          status: "RELEASED",
+        },
       });
 
-      // ONLY if this thread successfully updated it, decrement the stock
-      if (updateResult.count > 0) {
+      if (updated.count > 0) {
         await prisma.stock.update({
           where: {
             productId_warehouseId: {
-              productId: res.productId,
-              warehouseId: res.warehouseId
-            }
+              productId: reservation.productId,
+              warehouseId: reservation.warehouseId,
+            },
           },
-          data: { reserved: { decrement: res.quantity } }
+          data: {
+            reserved: {
+              decrement: reservation.quantity,
+            },
+          },
         });
       }
     }
   }
-
-  
-  // 2. FETCH PRODUCTS WITH INVENTORY
 
   const products = await prisma.product.findMany({
     include: {
@@ -51,103 +53,121 @@ export default async function HomePage() {
       },
     },
   });
-  
 
   return (
-    <main className="max-w-4xl mx-auto p-8">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
-      {/* Header */}
-      <div className="mb-8 border-b pb-4">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Allo Storefront
-        </h1>
+        {/* Header */}
+        <header className="mb-12">
+          <span className="inline-flex px-4 py-1.5 rounded-full bg-blue-50 text-blue-600 text-sm font-medium border border-blue-100">
+            Distributed Inventory System
+          </span>
 
-        <p className="text-gray-500 mt-2">
-          Real-time distributed inventory demonstration.
-        </p>
-      </div>
+          <h1 className="text-4xl md:text-5xl font-bold mt-4 text-slate-900">
+            Allo Storefront
+          </h1>
 
-      {/* Product List */}
-      <div className="grid gap-6">
+          <p className="mt-4 text-slate-600 max-w-3xl leading-relaxed">
+            Real-time inventory synchronization across warehouses with
+            reservation-based stock locking.
+          </p>
+        </header>
 
-        {products.map((product) => (
-          <div
-            key={product.id}
-            className="border border-gray-200 p-6 rounded-xl shadow-sm bg-white"
-          >
+        {/* Products */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {products.map((product) => (
+            <section
+              key={product.id}
+              className="rounded-3xl border bg-white shadow-sm hover:shadow-xl transition overflow-hidden"
+            >
+              <div className="h-2 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
 
-            {/* Product Details */}
-            <h2 className="text-xl font-bold text-gray-800">
-              {product.name}
+              <div className="p-6">
+                {/* Product header */}
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-slate-900">
+                    {product.name}
+                  </h2>
+
+                  <p className="mt-2 text-slate-500">
+                    {product.description}
+                  </p>
+                </div>
+
+                {/* Stock by warehouse */}
+                <div className="space-y-4">
+                  {product.stocks.map((stock) => {
+                    const available = stock.quantity - stock.reserved;
+                    const outOfStock = available <= 0;
+
+                    return (
+                      <div
+                        key={stock.warehouseId}
+                        className="p-4 rounded-2xl border bg-slate-50 hover:bg-white transition"
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
+                          {/* Warehouse info */}
+                          <div>
+                            <p className="text-lg font-semibold text-slate-900">
+                              {stock.warehouse.name}
+                            </p>
+
+                            <div className="flex items-center gap-2 mt-2">
+                              <span
+                                className={`h-2.5 w-2.5 rounded-full ${
+                                  outOfStock ? "bg-red-500" : "bg-green-500"
+                                }`}
+                              />
+
+                              <span
+                                className={`text-sm font-medium ${
+                                  outOfStock
+                                    ? "text-red-600"
+                                    : "text-green-600"
+                                }`}
+                              >
+                                {available} available
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action */}
+                          <div className="w-full lg:w-auto">
+                            {outOfStock ? (
+                              <span className="inline-block px-4 py-2 rounded-xl bg-red-50 text-red-500 text-sm font-semibold border border-red-100">
+                                Sold Out
+                              </span>
+                            ) : (
+                              <ReserveButton
+                                productId={product.id}
+                                warehouseId={stock.warehouseId}
+                                availableStock={available}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
+
+        {/* Empty state */}
+        {products.length === 0 && (
+          <div className="text-center py-32">
+            <h2 className="text-2xl font-semibold text-slate-700">
+              No products available
             </h2>
-
-            <p className="text-gray-500 mb-6">
-              {product.description}
+            <p className="mt-3 text-slate-500">
+              Inventory will appear here once items are added.
             </p>
-
-            {/* Warehouse Stock */}
-            <div className="space-y-3">
-
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-                Available Locations
-              </h3>
-
-              {product.stocks.map((stock) => {
-
-                // Calculate available stock
-                const availableStock =
-                  stock.quantity - stock.reserved;
-
-                const isOutOfStock = availableStock <= 0;
-
-                return (
-                  <div
-                    key={stock.warehouseId}
-                    className="flex justify-between items-center p-4 bg-gray-50 rounded-lg"
-                  >
-
-                    {/* Warehouse Info */}
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {stock.warehouse.name}
-                      </p>
-
-                      <p className="text-sm text-gray-500 text-left">
-                        Stock:{" "}
-
-                        <span
-                          className={`font-bold ${
-                            isOutOfStock
-                              ? "text-red-500"
-                              : "text-green-600"
-                          }`}
-                        >
-                          {availableStock} available
-                        </span>
-                      </p>
-                    </div>
-
-                    {/* Reserve Button */}
-                    {!isOutOfStock ? (
-                      <ReserveButton
-                        productId={product.id}
-                        warehouseId={stock.warehouseId}
-                        availableStock={availableStock}
-                      />
-                    ) : (
-                      <span className="px-4 py-2 bg-gray-100 text-gray-400 text-sm font-semibold rounded-md cursor-not-allowed">
-                        Out of Stock
-                      </span>
-                    )}
-
-                  </div>
-                );
-              })}
-
-            </div>
           </div>
-        ))}
-
+        )}
       </div>
     </main>
   );

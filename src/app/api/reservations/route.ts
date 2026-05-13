@@ -1,17 +1,15 @@
-/*
-{**
-    POST /api/reservations  
-    -Reserve units for a product/warehouse. 
-    Return 409 if there isn't enough stock 
-    available.
-***} 
-*/
+/**
+ * POST /api/reservations
+ * Reserves stock for a product in a warehouse.
+ * Returns 409 if available stock is insufficient.
+ */
 
-import { NextResponse } from 'next/server';
-import prisma from '@/app/lib/prisma';
-import { z } from 'zod';
+import { NextResponse } from "next/server";
+import prisma from "@/app/lib/prisma";
+import { z } from "zod";
 
-const reserveSchema = z.object({
+// Input validation schema
+const reservationSchema = z.object({
   productId: z.string().uuid(),
   warehouseId: z.string().uuid(),
   quantity: z.number().int().positive(),
@@ -19,11 +17,14 @@ const reserveSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { productId, warehouseId, quantity } = reserveSchema.parse(body);
+    const payload = await req.json();
+
+    // Validate incoming request body
+    const { productId, warehouseId, quantity } =
+      reservationSchema.parse(payload);
+
     
-    // set to reserve if ( total - reserved) >= req quantity
-    const updateResult = await prisma.$executeRaw`
+    const affectedRows = await prisma.$executeRaw`
       UPDATE "Stock"
       SET "reserved" = "reserved" + ${quantity}
       WHERE "productId" = ${productId}
@@ -31,28 +32,34 @@ export async function POST(req: Request) {
         AND ("quantity" - "reserved") >= ${quantity}
     `;
 
-    // if no row updated {insufficient case}
-    if (updateResult === 0) {
-      return NextResponse.json({ error: 'Insufficient stock' }, { status: 409 });
+    // If nothing was updated → stock not sufficient
+    if (affectedRows === 0) {
+      return NextResponse.json(
+        { error: "Insufficient stock available" },
+        { status: 409 }
+      );
     }
 
-    // create req for reservation if stock available
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    // Create reservation record with expiry
+    const expiryTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    const reservation = await prisma.reservation.create({
+    const newReservation = await prisma.reservation.create({
       data: {
         productId,
         warehouseId,
         quantity,
-        expiresAt,
-        status: 'PENDING',
+        expiresAt: expiryTime,
+        status: "PENDING",
       },
     });
 
-    return NextResponse.json(reservation, { status: 201 });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Failed to create reservation' }, { status: 500 });
+    return NextResponse.json(newReservation, { status: 201 });
+  } catch (err) {
+    console.error("Reservation creation failed:", err);
+
+    return NextResponse.json(
+      { error: "Unable to process reservation request" },
+      { status: 500 }
+    );
   }
 }

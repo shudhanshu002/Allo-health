@@ -2,62 +2,65 @@
 
 import { useEffect, useState } from "react";
 
+interface CountdownProps {
+  expiresAt: string;
+  onExpire: () => void;
+}
+
 export default function Countdown({
   expiresAt,
   onExpire,
-}: {
-  expiresAt: string;
-  onExpire: () => void;
-}) {
-
-  const [timeLeft, setTimeLeft] = useState("");
-  const [isExpired, setIsExpired] = useState(false);
+}: CountdownProps) {
+  const [displayTime, setDisplayTime] = useState("");
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-        
-      const distance =
-        new Date(expiresAt).getTime() -
-        new Date().getTime();
-        
-      if (distance <= 0) {
+    let intervalId: NodeJS.Timeout;
 
-        clearInterval(interval);
+    const updateTimer = () => {
+      const remainingTime =
+        new Date(expiresAt).getTime() - Date.now();
 
-        setTimeLeft("EXPIRED");
+      // If time is up
+      if (remainingTime <= 0) {
+        setDisplayTime("EXPIRED");
 
-        if (!isExpired) {
-          setIsExpired(true);
+        if (!expired) {
+          setExpired(true);
           onExpire();
         }
 
-      } else {
-        const m = Math.floor(
-          (distance % (1000 * 60 * 60)) /
-          (1000 * 60)
-        );
-
-        const s = Math.floor(
-          (distance % (1000 * 60)) / 1000
-        );
-
-        setTimeLeft(`${m}m ${s}s`);
+        clearInterval(intervalId);
+        return;
       }
 
-    }, 1000);
-    return () => clearInterval(interval);
+      
+      const minutes = Math.floor(
+        (remainingTime % (1000 * 60 * 60)) / (1000 * 60)
+      );
 
-  }, [expiresAt, isExpired, onExpire]);
+      const seconds = Math.floor(
+        (remainingTime % (1000 * 60)) / 1000
+      );
+
+      setDisplayTime(`${minutes}m ${seconds}s`);
+    };
+
+    
+    updateTimer();
+
+    intervalId = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [expiresAt, expired, onExpire]);
 
   return (
     <span
-      className={`font-mono font-bold ${
-        isExpired
-          ? "text-red-600"
-          : "text-orange-600"
+      className={`font-mono font-semibold ${
+        expired ? "text-red-600" : "text-orange-600"
       }`}
     >
-      {timeLeft}
+      {displayTime}
     </span>
   );
 }

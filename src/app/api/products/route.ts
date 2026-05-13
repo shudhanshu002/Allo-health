@@ -1,19 +1,20 @@
+import { NextResponse } from "next/server";
+import prisma from "@/app/lib/prisma";
+
+export const dynamic = "force-dynamic";
+
 /*
   GET /api/products
 
-  Fetch all products with stock details
-  from every warehouse.
+  Returns:
+  - product details
+  - warehouse-wise inventory
+  - live available stock
 */
-
-import { NextResponse } from 'next/server';
-import prisma from '@/app/lib/prisma';
-
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Fetch products with stock + warehouse info
-    const products = await prisma.product.findMany({
+    const productList = await prisma.product.findMany({
       include: {
         stocks: {
           include: {
@@ -23,35 +24,39 @@ export async function GET() {
       },
     });
 
-    
-    const formattedProducts = products.map((product) => ({
-      id: product.id,
-      name: product.name,
-      description: product.description,
+    const response = productList.map((item) => {
+      const inventory = item.stocks.map((entry) => {
+        const availableUnits =
+          entry.quantity - entry.reserved;
 
-      // Inventory details per warehouse
-      inventory: product.stocks.map((stock) => ({
-        warehouseId: stock.warehouse.id,
-        warehouseName: stock.warehouse.name,
+        return {
+          warehouseId: entry.warehouse.id,
+          warehouseName: entry.warehouse.name,
+          quantity: entry.quantity,
+          reserved: entry.reserved,
+          available: availableUnits,
+        };
+      });
 
-        // Total stock quantity
-        quantity: stock.quantity,
+      return {
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        inventory,
+      };
+    });
 
-        // Reserved stock
-        reserved: stock.reserved,
-
-        // Available stock
-        available: stock.quantity - stock.reserved,
-      })),
-    }));
-
-    return NextResponse.json(formattedProducts);
-  } catch (error) {
-    console.error('Products API Error:', error);
+    return NextResponse.json(response);
+  } catch (err) {
+    console.error("Failed to fetch products:", err);
 
     return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
+      {
+        error: "Unable to load products",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }

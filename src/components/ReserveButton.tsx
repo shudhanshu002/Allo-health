@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 interface ReserveButtonProps {
   productId: string;
   warehouseId: string;
-  availableStock: number; // NEW: Pass down the max limit
+  availableStock: number;
 }
 
 export default function ReserveButton({
@@ -14,18 +14,19 @@ export default function ReserveButton({
   warehouseId,
   availableStock,
 }: ReserveButtonProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState<number>(1); // NEW: Track selected quantity
-
   const router = useRouter();
 
-  const handleReserve = async () => {
-    setIsLoading(true);
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  
+  const reserveStock = async () => {
+    setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/reservations", {
+      const res = await fetch("/api/reservations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -33,17 +34,17 @@ export default function ReserveButton({
         body: JSON.stringify({
           productId,
           warehouseId,
-          quantity, // UPDATED: Send the custom quantity to the API
+          quantity,
         }),
       });
 
-      const data = await response.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
-        if (response.status === 409) {
-          setError("Not enough stock available!");
+      if (!res.ok) {
+        if (res.status === 409) {
+          setError("Not enough stock available");
         } else {
-          setError(data.error || "Something went wrong");
+          setError(data?.error || "Something went wrong");
         }
         return;
       }
@@ -52,52 +53,100 @@ export default function ReserveButton({
     } catch (err) {
       setError("Failed to connect to server");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
+  
+  const updateQuantityFromInput = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const rawValue = parseInt(e.target.value, 10);
 
-  // Ensure the user doesn't manually type a number higher than stock
-  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = parseInt(e.target.value, 10);
-    if (isNaN(val)) val = 1;
-    // Clamp the value between 1 and availableStock
-    setQuantity(Math.max(1, Math.min(val, availableStock)));
+    const safeValue = Number.isNaN(rawValue) ? 1 : rawValue;
+
+    setQuantity(Math.max(1, Math.min(safeValue, availableStock)));
   };
 
+  const increaseQuantity = () => {
+    setQuantity((prev) => Math.min(availableStock, prev + 1));
+  };
+
+  const decreaseQuantity = () => {
+    setQuantity((prev) => Math.max(1, prev - 1));
+  };
+
+  const isReserveDisabled =
+    loading || quantity < 1 || quantity > availableStock;
+
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-2">
-        {/* NEW: Quantity Input */}
-        <input
-          type="number"
-          min="1"
-          max={availableStock}
-          value={quantity}
-          onChange={handleQuantityChange}
-          disabled={isLoading}
-          className="w-16 px-2 py-2 border border-gray-300 rounded-md text-sm text-center focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100"
-          title="Quantity"
-        />
+    <div className="flex flex-col items-end gap-2">
+
+      {/* Quantity + Button Row */}
+      <div className="flex items-center gap-3">
+
+        {/* Quantity Selector */}
+        <div className="flex items-center rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+          <button
+            type="button"
+            disabled={loading || quantity <= 1}
+            onClick={decreaseQuantity}
+            className="h-11 w-11 text-slate-600 hover:bg-slate-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            −
+          </button>
+
+          <input
+            type="number"
+            min="1"
+            max={availableStock}
+            value={quantity}
+            onChange={updateQuantityFromInput}
+            disabled={loading}
+            className="w-14 h-11 text-center font-semibold text-slate-800 outline-none border-x border-slate-200 disabled:bg-slate-50"
+            title="Quantity"
+          />
+
+          <button
+            type="button"
+            disabled={loading || quantity >= availableStock}
+            onClick={increaseQuantity}
+            className="h-11 w-11 text-slate-600 hover:bg-slate-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            +
+          </button>
+        </div>
 
         {/* Reserve Button */}
         <button
-          onClick={handleReserve}
-          disabled={isLoading || quantity < 1 || quantity > availableStock}
-          className={`px-4 py-2 rounded-md font-medium text-white transition-colors ${
-            isLoading || quantity < 1 || quantity > availableStock
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800"
+          onClick={reserveStock}
+          disabled={isReserveDisabled}
+          className={`relative overflow-hidden px-6 py-3 rounded-xl font-semibold text-sm tracking-wide transition-all duration-200 shadow-md ${
+            isReserveDisabled
+              ? "bg-slate-300 text-white cursor-not-allowed"
+              : "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white hover:shadow-xl hover:scale-[1.03] active:scale-[0.98]"
           }`}
         >
-          {isLoading ? "Reserving..." : "Reserve"}
+          <span className="relative z-10">
+            {loading ? "Reserving..." : "Reserve"}
+          </span>
         </button>
+      </div>
+
+      {/* Stock Info */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+
+        <span className="text-slate-500 font-medium">
+          {availableStock} units available
+        </span>
       </div>
 
       {/* Error Message */}
       {error && (
-        <span className="text-xs text-red-500 font-medium animate-pulse">
+        <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-100 text-red-600 text-xs font-medium animate-in fade-in slide-in-from-top-1 duration-200">
           {error}
-        </span>
+        </div>
       )}
     </div>
   );

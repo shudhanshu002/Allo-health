@@ -1,51 +1,73 @@
+import { NextResponse } from "next/server";
+import prisma from "@/app/lib/prisma";
+
 /*
   GET /api/reservations/:id
 
-  Fetch a single reservation using its ID.
-  Return 404 if reservation does not exist.
-*/
+  Returns:
+  - reservation details by ID
 
-import { NextResponse } from 'next/server';
-import prisma from '@/app/lib/prisma';
+  Errors:
+  - 400 -> missing reservation ID
+  - 404 -> reservation not found
+*/
 
 export async function GET(
   req: Request,
-  context: { params: Promise<{ id: string }> | { id: string } }
+  context: {
+    params: Promise<{ id: string }> | { id: string };
+  }
 ) {
   try {
-    // Extract reservation ID safely 
-    const params = await context.params;
-    const id = params?.id;
+    const resolvedParams = await context.params;
+    const reservationId = resolvedParams?.id;
 
-    // Validate ID
-    if (!id) {
+    // validate request
+    if (!reservationId) {
       return NextResponse.json(
-        { error: 'Reservation ID is missing' },
-        { status: 400 }
+        {
+          error: "Reservation ID is required",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    // Fetch reservation from database
-    const reservation = await prisma.reservation.findUnique({
-      where: { id },
-    });
+    // fetch reservation record
+    const reservationData =
+      await prisma.reservation.findUnique({
+        where: {
+          id: reservationId,
+        },
+      });
 
-    // Reservation not found
-    if (!reservation) {
+    // no reservation found
+    if (!reservationData) {
       return NextResponse.json(
-        { error: 'Reservation not found' },
-        { status: 404 }
+        {
+          error: "Reservation not found",
+        },
+        {
+          status: 404,
+        }
       );
     }
 
-    // Return reservation data
-    return NextResponse.json(reservation);
-  } catch (error) {
-    console.error('Fetch Reservation Error:', error);
+    return NextResponse.json(reservationData);
+  } catch (err) {
+    console.error(
+      "Unable to fetch reservation:",
+      err
+    );
 
     return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
+      {
+        error: "Internal Server Error",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
