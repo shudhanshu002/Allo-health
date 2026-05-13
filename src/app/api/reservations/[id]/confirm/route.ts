@@ -11,66 +11,53 @@ import prisma from '@/app/lib/prisma';
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  const { id } = await params;
-
   try {
-    // find reservation by ID
-    const reservation = await prisma.reservation.findUnique({
-      where: { id },
-    });
+    const params = await context.params;
+    const id = params?.id;
 
-    // reservation must be pending
-    if (!reservation || reservation.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Reservation not found' },
-        { status: 404 }
-      );
-    }
+    if (!id) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
 
-    // Check whether reservation expired
+    const reservation = await prisma.reservation.findUnique({ where: { id } });
+    if (!reservation) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // expiration check
     if (new Date() > reservation.expiresAt) {
-      return NextResponse.json(
-        { error: 'Reservation expired' },
-        { status: 410 }
-      );
+      const updateResult = await prisma.reservation.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'RELEASED' },
+      });
+
+      if (updateResult.count > 0) {
+        await prisma.stock.update({
+          where: { productId_warehouseId: { productId: reservation.productId, warehouseId: reservation.warehouseId } },
+          data: { reserved: { decrement: reservation.quantity } },
+        });
+      }
+      return NextResponse.json({ error: 'Reservation expired.' }, { status: 410 });
     }
 
-    // Confirm reservation and update stock
-    await prisma.$transaction([
-      prisma.reservation.update({
-        where: { id },
-        data: {
-          status: 'CONFIRMED',
-        },
-      }),
-
-      prisma.stock.update({
-        where: {
-          productId_warehouseId: {
-            productId: reservation.productId,
-            warehouseId: reservation.warehouseId,
-          },
-        },
-        data: {
-          quantity: {
-            decrement: reservation.quantity,
-          },
-          reserved: {
-            decrement: reservation.quantity,
-          },
-        },
-      }),
-    ]);
-
-    return NextResponse.json({
-      message: 'Confirmed',
+    // success confirm
+    const updateResult = await prisma.reservation.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'CONFIRMED' },
     });
+
+    if (updateResult.count === 0) {
+      return NextResponse.json({ error: 'Already processed' }, { status: 400 });
+    }
+
+    await prisma.stock.update({
+      where: { productId_warehouseId: { productId: reservation.productId, warehouseId: reservation.warehouseId } },
+      data: {
+        quantity: { decrement: reservation.quantity }, 
+        reserved: { decrement: reservation.quantity },
+      },
+    });
+
+    return NextResponse.json({ message: 'Confirmed successfully' });
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

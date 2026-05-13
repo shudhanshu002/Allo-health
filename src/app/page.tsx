@@ -11,47 +11,32 @@ export default async function HomePage() {
   // find all expired pending reservations
   const expiredReservations = await prisma.reservation.findMany({
     where: {
-      status: "PENDING",
-      expiresAt: {
-        lt: new Date(),
-      },
-    },
+      status: 'PENDING',
+      expiresAt: { lt: new Date() }
+    }
   });
 
-  // Release reserved stock if expired reservations exist
   if (expiredReservations.length > 0) {
-    const cleanupTasks = [];
-
     for (const res of expiredReservations) {
-      cleanupTasks.push(
-        prisma.reservation.update({
-          where: { id: res.id },
-          data: {
-            status: "RELEASED",
-          },
-        })
-      );
+      // Try to atomically claim this reservation for cleanup
+      const updateResult = await prisma.reservation.updateMany({
+        where: { id: res.id, status: 'PENDING' },
+        data: { status: 'RELEASED' }
+      });
 
-      // Return reserved stock back to warehouse
-      cleanupTasks.push(
-        prisma.stock.update({
+      // ONLY if this thread successfully updated it, decrement the stock
+      if (updateResult.count > 0) {
+        await prisma.stock.update({
           where: {
             productId_warehouseId: {
               productId: res.productId,
-              warehouseId: res.warehouseId,
-            },
+              warehouseId: res.warehouseId
+            }
           },
-          data: {
-            reserved: {
-              decrement: res.quantity,
-            },
-          },
-        })
-      );
+          data: { reserved: { decrement: res.quantity } }
+        });
+      }
     }
-
-    // Execute all cleanup operations safely
-    await prisma.$transaction(cleanupTasks);
   }
 
   
