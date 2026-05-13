@@ -1,7 +1,3 @@
 {
-  "version": 2,
-  "env": {
-    "DATABASE_URL": "postgresql://postgres.wbtggmyjnwvhdoyseasj:Sudhanshu002%40123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require",
-    "DIRECT_URL":   "postgresql://postgres:Sudhanshu002%40123@db.wbtggmyjnwvhdoyseasj.supabase.co:5432/postgres?sslmode=require"
-  }
+  "version": 2
 }
